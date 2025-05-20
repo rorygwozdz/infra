@@ -1,5 +1,11 @@
 from starlite import Starlite, get, Response
-from backend.data import (
+from typing import Any
+from orats_api import (
+    get_strikes, get_strikes_by_expiry, get_strikes_by_opra,
+    get_expiration_dates, get_implied_monies, get_forecast_monies, get_summaries
+)
+
+from data import (
     get_vol_surface_df,
     get_vol_surface_percentiles_df,
     get_vol_spread_df,
@@ -9,6 +15,7 @@ from backend.data import (
 )
 import pandas as pd
 
+# make vol functions 
 def df_to_response(df: pd.DataFrame) -> Response:
     return Response(content=df.to_json(orient="records"), media_type="application/json")
 
@@ -44,6 +51,36 @@ def forward_vol_matrix(stripped: bool = False) -> Response:
     matrix_dict = df.drop(columns=["Stripped"]).to_dict()
     return Response(content=pd.Series(matrix_dict).to_json(), media_type="application/json")
 
+# orats api code 
+
+@get("/orats/strikes")
+def strikes_handler(ticker: str) -> Any:
+    return get_strikes(ticker)
+
+@get("/orats/strikes-by-expiry")
+def strikes_expiry_handler(ticker: str, expiry: str) -> Any:
+    return get_strikes_by_expiry(ticker, expiry)
+
+@get("/orats/strikes-by-opra")
+def strikes_opra_handler(opra: str) -> Any:
+    return get_strikes_by_opra(opra)
+
+@get("/orats/expirations")
+def expirations_handler(ticker: str) -> Any:
+    return get_expiration_dates(ticker)
+
+@get("/orats/implied")
+def implied_handler(ticker: str) -> Any:
+    return get_implied_monies(ticker)
+
+@get("/orats/forecast")
+def forecast_handler(ticker: str) -> Any:
+    return get_forecast_monies(ticker)
+
+@get("/orats/summaries")
+def summaries_handler(ticker: str) -> Any:
+    return get_summaries(ticker)
+
 app = Starlite(route_handlers=[
     vol_surface,
     vol_surface_percentiles,
@@ -51,4 +88,6 @@ app = Starlite(route_handlers=[
     vol_spread_percentiles,
     top_down_vol,
     forward_vol_matrix,
+     strikes_handler, strikes_expiry_handler, strikes_opra_handler,
+    expirations_handler, implied_handler, forecast_handler, summaries_handler
 ])
