@@ -91,3 +91,4 @@ def get_forward_vol_matrix_df(stripped: bool = False) -> pd.DataFrame:
     df = pd.DataFrame(base_matrix, index=instruments, columns=instruments)
     df["Stripped"] = stripped
     return df
+
