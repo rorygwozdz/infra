@@ -15,15 +15,6 @@ def _get(endpoint: str, params: dict = None):
 def get_strikes(ticker: str):
     return _get("strikes", {"ticker": ticker})
 
-def get_strikes_by_expiry(ticker: str, expiry: str):
-    return _get("strikes-by-expiry", {"ticker": ticker, "expiry": expiry})
-
-def get_strikes_by_opra(opra_code: str):
-    return _get("strikes/options", {"opra": opra_code})
-
-def get_expiration_dates(ticker: str):
-    return _get("expiration-dates", {"ticker": ticker})
-
 def get_implied_monies(ticker: str):
     return _get("monies/implied", {"ticker": ticker})
 
