@@ -17,14 +17,25 @@ TABS = {
 
 app.layout = dmc.MantineProvider(html.Div([
     html.H2("Vol Dashboard"),
-    dcc.Input(
-        id="ticker-input",
-        type="text",
-        placeholder="Enter Ticker",
-        debounce=True,
-        value="IBIT"  # <-- Set your default ticker here
-    ),
-    html.Button("Submit", id="submit-button", n_clicks=0),
+    html.Div([
+        dcc.Input(
+            id="ticker-input-1",
+            type="text",
+            placeholder="Enter Primary Ticker (required)",
+            debounce=True,
+            value="IBIT",
+            style={"marginRight": "10px"}
+        ),
+        dcc.Input(
+            id="ticker-input-2",
+            type="text",
+            placeholder="Enter Second Ticker (optional)",
+            debounce=True,
+            value="",
+            style={"marginRight": "10px"}
+        ),
+        html.Button("Submit", id="submit-button", n_clicks=0),
+    ], style={"marginBottom": "10px"}),
     dmc.MultiSelect(
         id="expiry-filter",
         placeholder="Filter by Expiry Date(s)",
@@ -46,7 +57,7 @@ app.layout = dmc.MantineProvider(html.Div([
     dcc.Store(id="all-tables-data"),
     dcc.Loading(
         id="loading-table",
-        type="circle",  # or "default", "dot"
+        type="circle",
         children=html.Div(id="table-container"),
     ),
 ]))
@@ -55,18 +66,24 @@ app.layout = dmc.MantineProvider(html.Div([
     Output("all-tables-data", "data"),
     Output("error-msg", "children"),
     Input("submit-button", "n_clicks"),
-    Input("ticker-input", "value"),  
-    prevent_initial_call=False,      # Allow callback to run on first load
+    State("ticker-input-1", "value"),
+    State("ticker-input-2", "value"),
+    prevent_initial_call=False,
 )
-def fetch_all_tables(n_clicks, ticker):
-    if not ticker:
-        return dash.no_update, ""
+def fetch_all_tables(n_clicks, ticker1, ticker2):
+    if not ticker1:
+        return dash.no_update, "Primary ticker is required."
+    tickers = [ticker1.strip().upper()]
+    if ticker2 and ticker2.strip() and ticker2.strip().upper() != ticker1.strip().upper():
+        tickers.append(ticker2.strip().upper())
     try:
-        # Pass a list of endpoints you want to fetch
         endpoints = ["strikes", "forecast", "implied"]
         resp = requests.get(
             "http://localhost:8000/orats/multi",
-            params={"ticker": ticker.upper(), "endpoints": ",".join(endpoints)}
+            params={
+                "ticker": ",".join(tickers),
+                "endpoints": ",".join(endpoints)
+            }
         )
         resp.raise_for_status()
         results = resp.json()
@@ -99,15 +116,15 @@ def make_vol_curve_chart(df):
         return html.Div("Missing required columns for chart.", style={"color": "red"})
     df_long = df.melt(id_vars=["expirDate"], value_vars=vol_cols_sorted,
                       var_name="vol", value_name="value")
-    df_long["vol"] = df_long["vol"].str.replace("vol", "").astype(float) / 100
-    df_long = df_long.sort_values(["expirDate", "vol"])
+    df_long["moneyness"] = df_long["vol"].str.replace("vol", "").astype(float) / 100
+    df_long = df_long.sort_values(["expirDate", "moneyness"], ascending=[True, False])
     # Use the same expirDate sorting as in make_strikes_chart
     expir_sorted = sorted(df_long["expirDate"].dropna().unique())
     df_long["expirDate"] = pd.Categorical(df_long["expirDate"], categories=expir_sorted, ordered=True)
     df_long = df_long.reset_index(drop=True)
     fig = px.line(
         df_long,
-        x="vol",
+        x="moneyness",
         y="value",
         color="expirDate",
         markers=True,
@@ -117,7 +134,8 @@ def make_vol_curve_chart(df):
         xaxis_title="Moneyness %",
         yaxis_title="Vol",
         xaxis_tickformat=".2%",
-        yaxis_tickformat=".2%"
+        yaxis_tickformat=".2%",
+        xaxis_autorange='reversed'  # <-- Add this line to reverse the x-axis
     )
     return dcc.Graph(figure=fig)
 
