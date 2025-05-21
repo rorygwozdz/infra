@@ -4,6 +4,7 @@ from dash.dash_table.Format import Format, Scheme
 import plotly.express as px
 import requests
 import pandas as pd
+import dash_mantine_components as dmc
 
 app = dash.Dash(__name__)
 server = app.server
@@ -14,7 +15,7 @@ TABS = {
     "implied": {"label": "Implied", "endpoint": "implied"},
 }
 
-app.layout = html.Div([
+app.layout = dmc.MantineProvider(html.Div([
     html.H2("Vol Dashboard"),
     dcc.Input(
         id="ticker-input",
@@ -24,14 +25,14 @@ app.layout = html.Div([
         value="IBIT"  # <-- Set your default ticker here
     ),
     html.Button("Submit", id="submit-button", n_clicks=0),
-    dcc.Dropdown(
+    dmc.MultiSelect(
         id="expiry-filter",
         placeholder="Filter by Expiry Date(s)",
-        options=[],  # Will be populated dynamically
-        value=None,
-        multi=True,  # <-- Allow multiple selections
+        data=[],  # Will be populated dynamically
+        value=[],
         clearable=True,
-        style={"width": "400px", "marginBottom": "10px"}
+        searchable=True,
+        style={"width": 400, "marginBottom": 10},
     ),
     html.Div(id="error-msg", style={"color": "red"}),
     dcc.Tabs(
@@ -48,7 +49,7 @@ app.layout = html.Div([
         type="circle",  # or "default", "dot"
         children=html.Div(id="table-container"),
     ),
-])
+]))
 
 @app.callback(
     Output("all-tables-data", "data"),
@@ -216,21 +217,21 @@ def display_table(tab_value, all_tables_data, expiry_filter):
     return table
 
 @app.callback(
-    Output("expiry-filter", "options"),
+    Output("expiry-filter", "data"),
     Output("expiry-filter", "value"),
-    Input("tabs", "value"),
     Input("all-tables-data", "data"),
 )
-def update_expiry_options(tab_value, all_tables_data):
-    if not all_tables_data or tab_value not in all_tables_data:
-        return [], None
-    data = all_tables_data[tab_value]
-    df = pd.DataFrame(data)
-    if "expirDate" not in df.columns:
-        return [], None
-    expiries = sorted(df["expirDate"].dropna().unique())
+def update_expiry_options(all_tables_data):
+    if not all_tables_data:
+        return [], []
+    expiries = set()
+    for tab_data in all_tables_data.values():
+        df = pd.DataFrame(tab_data)
+        if "expirDate" in df.columns:
+            expiries.update(df["expirDate"].dropna().unique())
+    expiries = sorted(expiries)
     options = [{"label": e, "value": e} for e in expiries]
-    return options, None
+    return options, []
 
 if __name__ == "__main__":
     app.run(debug=True)
