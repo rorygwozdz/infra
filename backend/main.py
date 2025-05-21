@@ -52,7 +52,6 @@ def forward_vol_matrix(stripped: bool = False) -> Response:
     return Response(content=pd.Series(matrix_dict).to_json(), media_type="application/json")
 
 # orats api code 
-
 @get("/orats/strikes")
 def strikes_handler(ticker: str) -> Any:
     return get_strikes(ticker)

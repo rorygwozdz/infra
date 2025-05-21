@@ -19,16 +19,16 @@ def get_strikes_by_expiry(ticker: str, expiry: str):
     return _get("strikes-by-expiry", {"ticker": ticker, "expiry": expiry})
 
 def get_strikes_by_opra(opra_code: str):
-    return _get("strikes-by-opra", {"opra": opra_code})
+    return _get("strikes/options", {"opra": opra_code})
 
 def get_expiration_dates(ticker: str):
     return _get("expiration-dates", {"ticker": ticker})
 
 def get_implied_monies(ticker: str):
-    return _get("implied-monies", {"ticker": ticker})
+    return _get("monies/implied", {"ticker": ticker})
 
 def get_forecast_monies(ticker: str):
-    return _get("forecast-monies", {"ticker": ticker})
+    return _get("monies/forecast", {"ticker": ticker})
 
 def get_summaries(ticker: str):
     return _get("summaries", {"ticker": ticker})
