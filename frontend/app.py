@@ -18,6 +18,7 @@ TABS = {
 app.layout = dmc.MantineProvider(html.Div([
     html.H2("Vol Dashboard"),
     html.Div([
+        html.Label("Base:", style={"marginRight": "5px"}),
         dcc.Input(
             id="ticker-input-1",
             type="text",
@@ -26,6 +27,7 @@ app.layout = dmc.MantineProvider(html.Div([
             value="IBIT",
             style={"marginRight": "10px"}
         ),
+        html.Label("Top (optional):", style={"marginRight": "5px"}),
         dcc.Input(
             id="ticker-input-2",
             type="text",
@@ -109,19 +111,13 @@ def make_strikes_chart(df):
         return dcc.Graph(figure=fig)
     return html.Div("Missing required columns for chart.", style={"color": "red"})
 
-def make_vol_curve_chart(df):
-    vol_cols = [col for col in df.columns if col.startswith("vol")]
-    vol_cols_sorted = sorted(vol_cols, key=lambda x: int(x.replace("vol", "")))
-    if "expirDate" not in df.columns or not vol_cols_sorted:
+def make_vol_curve_chart(df_long):
+    if df_long.empty:
         return html.Div("Missing required columns for chart.", style={"color": "red"})
-    df_long = df.melt(id_vars=["expirDate"], value_vars=vol_cols_sorted,
-                      var_name="vol", value_name="value")
-    df_long["moneyness"] = df_long["vol"].str.replace("vol", "").astype(float) / 100
-    df_long = df_long.sort_values(["expirDate", "moneyness"], ascending=[True, False])
-    # Use the same expirDate sorting as in make_strikes_chart
+    # Sort for consistent plotting
     expir_sorted = sorted(df_long["expirDate"].dropna().unique())
     df_long["expirDate"] = pd.Categorical(df_long["expirDate"], categories=expir_sorted, ordered=True)
-    df_long = df_long.reset_index(drop=True)
+    df_long = df_long.sort_values(["expirDate", "moneyness"], ascending=[True, False])
     fig = px.line(
         df_long,
         x="moneyness",
@@ -135,7 +131,7 @@ def make_vol_curve_chart(df):
         yaxis_title="Vol",
         xaxis_tickformat=".2%",
         yaxis_tickformat=".2%",
-        xaxis_autorange='reversed'  # <-- Add this line to reverse the x-axis
+        xaxis_autorange='reversed'
     )
     return dcc.Graph(figure=fig)
 
@@ -210,28 +206,155 @@ def display_table(tab_value, all_tables_data, expiry_filter):
         return "No data found."
     data = all_tables_data[tab_value]
     df = pd.DataFrame(data)
+    tickers = df["ticker"].unique() if "ticker" in df.columns else []
+
+    # Filter by expiry if needed
     if expiry_filter and "expirDate" in df.columns:
         if isinstance(expiry_filter, list):
             df = df[df["expirDate"].isin(expiry_filter)]
         else:
             df = df[df["expirDate"] == expiry_filter]
-    table = make_friendly_table(df)
-    # Coerce strike and smvVol to numeric if present
-    if "strike" in df.columns:
-        df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
-    if "smvVol" in df.columns:
-        df["smvVol"] = pd.to_numeric(df["smvVol"], errors="coerce")
-    table = make_friendly_table(df)
+
+    children = []
+
     if tab_value == "strikes":
-        strikes_chart = make_strikes_chart(df)
-        return html.Div([strikes_chart, table])
+        chart_divs = []
+        table_divs = []
+        for ticker in tickers:
+            df_ticker = df[df["ticker"] == ticker]
+            chart = make_strikes_chart(df_ticker)
+            table = make_friendly_table(df_ticker)
+            chart_divs.append(
+                html.Div(
+                    [
+                        html.H4(f"{ticker}"),
+                        chart,
+                    ],
+                    style={"margin": "10px"}
+                )
+            )
+            table_divs.append(
+                html.Div(
+                    [
+                        table
+                    ],
+                    style={"margin": "10px"}
+                )
+            )
+        # Stack all charts, then all tables, in a single column
+        return html.Div(chart_divs + table_divs)
+
     elif tab_value == "forecast":
-        vol_chart = make_vol_curve_chart(df)
-        return html.Div([vol_chart, table])
+        # One vol curve chart per ticker
+        for ticker in tickers:
+            df_ticker = df[df["ticker"] == ticker]
+            df_long = melt_vol_curve(df_ticker)
+            chart = make_vol_curve_chart(df_long)
+            children.append(html.H4(f"{ticker}"))
+            children.append(chart)
+
+        # Spread chart (if two tickers)
+        if len(tickers) == 2:
+            t1, t2 = tickers[0], tickers[1]
+            df1 = df[df["ticker"] == t1].copy()
+            df2 = df[df["ticker"] == t2].copy()
+            df1_long = melt_vol_curve(df1)
+            df2_long = melt_vol_curve(df2)
+            # Join on expirDate and moneyness
+            join_cols = ["expirDate", "moneyness"]
+            merged = pd.merge(
+                df1_long, df2_long,
+                on=join_cols,
+                suffixes=(f"_{t1}", f"_{t2}")
+            )
+            
+            # Calculate spread
+            merged["value"] = merged[f"value_{t2}"].copy() - merged[f"value_{t1}"].copy()
+            merged["ticker"] = f"{t2} - {t1} Spread"
+            print(merged.head(20))
+            spread_df = merged[["expirDate", "moneyness",f"value_{t1}", f"value_{t2}", "value", "ticker"]]
+            
+            # Chart the spread
+            spread_chart = make_vol_curve_chart(spread_df)
+            children.append(html.H4(f"{t2} - {t1} Spread"))
+            children.append(spread_chart)
+            spread_df["vol_spread"] = spread_df["value"].copy()
+            spread_df.drop(columns=["value"], inplace=True)
+            spread_df.rename(columns={"ticker": "spread_ticker"}, inplace=True)
+            spread_table = make_friendly_table(spread_df)
+            children.append(spread_table)
+
+        # Table of all data
+        table = make_friendly_table(df)
+        children.append(table)
+        return html.Div(children)
+
     elif tab_value == "implied":
-        vol_chart = make_vol_curve_chart(df)
-        atmiv_chart = make_atmiv_chart(df)
-        return html.Div([vol_chart, atmiv_chart, table])
+        # One vol curve chart per ticker
+        for ticker in tickers:
+            df_ticker = df[df["ticker"] == ticker]
+            df_long = melt_vol_curve(df_ticker)
+            chart = make_vol_curve_chart(df_long)
+            children.append(html.H4(f"{ticker}"))
+            children.append(chart)
+            # ATMIV chart for each ticker
+            if "atmiv" in df_ticker.columns:
+                atmiv_chart = make_atmiv_chart(df_ticker)
+                children.append(html.H5(f"{ticker} ATMIV by Expiry"))
+                children.append(atmiv_chart)
+
+        # Spread charts (if two tickers)
+        if len(tickers) == 2:
+            t1, t2 = tickers[0], tickers[1]
+            df1 = df[df["ticker"] == t1].copy()
+            df2 = df[df["ticker"] == t2].copy()
+            # Vol curve spread
+            df1_long = melt_vol_curve(df1)
+            df2_long = melt_vol_curve(df2)
+            join_cols = ["expirDate", "moneyness"]
+            merged = pd.merge(
+                df1_long, df2_long,
+                on=join_cols,
+                suffixes=(f"_{t1}", f"_{t2}")
+            )
+            merged["value"] = merged[f"value_{t2}"] - merged[f"value_{t1}"]
+            merged["ticker"] = f"{t2} - {t1} Spread"
+            spread_df = merged[["expirDate", "moneyness", f"value_{t1}", f"value_{t2}", "value", "ticker"]]
+            spread_chart = make_vol_curve_chart(spread_df)
+            children.append(html.H4(f"{t2} - {t1} Vol Curve Spread"))
+            children.append(spread_chart)
+
+            # ATMIV spread chart
+            if "atmiv" in df1.columns and "atmiv" in df2.columns:
+                atmiv_merged = pd.merge(
+                    df1[["expirDate", "atmiv"]], df2[["expirDate", "atmiv"]],
+                    on="expirDate", suffixes=(f"_{t1}", f"_{t2}")
+                )
+                atmiv_merged["atmiv_spread"] = atmiv_merged[f"atmiv_{t2}"] - atmiv_merged[f"atmiv_{t1}"]
+                atmiv_merged = atmiv_merged.sort_values("expirDate")
+                # Plot the spread
+                fig = px.line(
+                    atmiv_merged,
+                    x="expirDate",
+                    y="atmiv_spread",
+                    markers=True,
+                    title=f"ATMIV Spread ({t2} - {t1}) by Expiry"
+                )
+                fig.update_layout(
+                    xaxis_title="Expiry",
+                    yaxis_title="ATMIV Spread",
+                    yaxis_tickformat=".2%"
+                )
+                children.append(html.H5(f"{t2} - {t1} ATMIV Spread by Expiry"))
+                children.append(dcc.Graph(figure=fig))
+
+        # Table of all data
+        table = make_friendly_table(df)
+        children.append(table)
+        return html.Div(children)
+
+    # Default fallback
+    table = make_friendly_table(df)
     return table
 
 @app.callback(
@@ -250,6 +373,21 @@ def update_expiry_options(all_tables_data):
     expiries = sorted(expiries)
     options = [{"label": e, "value": e} for e in expiries]
     return options, []
+
+def melt_vol_curve(df):
+    """Melt vol columns into long format with moneyness as a column."""
+    vol_cols = [col for col in df.columns if col.startswith("vol")]
+    if not vol_cols or "expirDate" not in df.columns:
+        return pd.DataFrame()
+    vol_cols_sorted = sorted(vol_cols, key=lambda x: int(x.replace("vol", "")))
+    df_long = df.melt(
+        id_vars=["expirDate", "ticker"] if "ticker" in df.columns else ["expirDate"],
+        value_vars=vol_cols_sorted,
+        var_name="vol",
+        value_name="value"
+    )
+    df_long["moneyness"] = df_long["vol"].str.replace("vol", "").astype(float) / 100
+    return df_long
 
 if __name__ == "__main__":
     app.run(debug=True)
