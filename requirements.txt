@@ -1,0 +1,11 @@
+google-cloud-bigquery
+google-auth
+pandas
+matplotlib
+numpy
+scipy
+ipywidgets
+altair
+ipython
+jupyter
+notebook
