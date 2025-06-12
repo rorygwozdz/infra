@@ -24,6 +24,6 @@
     * Restriction on immediate testing of new strategic approaches (counterable with one off runs). 
 
 ## Notes
-Author: Rory Gwozdz
-Originally Approved By: Rory
-Original Date of Record: 2025-06-11
+* Author: Rory Gwozdz
+* Originally Approved By: Rory
+* Original Date of Record: 2025-06-11
